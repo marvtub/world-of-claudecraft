@@ -159,6 +159,20 @@ describe('healing threat', () => {
     expect(a).toBeCloseTo(b, 5); // even split
   });
 
+  it('healing a non-party player creates threat on mobs already fighting them', () => {
+    const sim = new Sim({ seed: 42, playerClass: 'warrior', noPlayer: true });
+    const tank = sim.entities.get(sim.addPlayer('warrior', 'Tank'))!;
+    const healer = sim.entities.get(sim.addPlayer('priest', 'OutsideHealer'))!;
+    const wolf = nearestMob(sim, 'forest_wolf', tank);
+    beefUp(wolf);
+    hit(sim, tank, wolf, 50);
+    tank.hp = Math.max(1, tank.hp - 100);
+
+    (sim as any).applyHeal(healer, tank, 80, 'Heal');
+
+    expect(wolf.threat.get(healer.id)).toBeGreaterThan(0);
+  });
+
   it('an unaware mob gets no healing threat', () => {
     const { sim, tank, healer } = partyOfTwo();
     const wolf = nearestMob(sim, 'forest_wolf', tank);
