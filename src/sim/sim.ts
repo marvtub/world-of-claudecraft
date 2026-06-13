@@ -917,7 +917,7 @@ export class Sim {
               e.hp += healed;
               this.emit({ type: 'heal2', sourceId: a.sourceId, targetId: e.id, amount: healed, crit: false, ability: a.name });
               const src = this.entities.get(a.sourceId);
-              if (src) this.healingThreat(src, healed);
+              if (src) this.healingThreat(src, e, healed);
             }
           } else if (a.kind === 'polymorph') {
             const heal = Math.round(e.maxHp * 0.10);
@@ -1168,7 +1168,7 @@ export class Sim {
           if (healed > 0) {
             p.hp += healed;
             this.emit({ type: 'heal2', sourceId: p.id, targetId: p.id, amount: healed, crit: false, ability: res.def.name });
-            this.healingThreat(p, healed);
+            this.healingThreat(p, p, healed);
           }
         }
       }
@@ -1186,40 +1186,34 @@ export class Sim {
     healed = Math.min(healed, target.maxHp - target.hp);
     target.hp += healed;
     this.emit({ type: 'heal2', sourceId: source.id, targetId: target.id, amount: healed, crit, ability });
-    this.healingThreat(source, healed);
+    this.healingThreat(source, target, healed);
   }
 
   // Classic healing threat: 0.5 per point of EFFECTIVE healing (overheal is
-  // free), split evenly among every mob in combat with the healer's party.
-  // Mobs unaware of the party get nothing.
-  private healingThreat(source: Entity, healed: number): void {
+  // free), split evenly among every mob already fighting the healed target.
+  // Party membership does not change threat; it only affects social systems.
+  private healingThreat(source: Entity, target: Entity, healed: number): void {
     if (source.kind !== 'player' || healed <= 0) return;
     const total = healed * HEAL_THREAT_FACTOR * threatModifier(source, 'physical');
     const aware: Entity[] = [];
     for (const m of this.entities.values()) {
       if (m.kind !== 'mob' || m.dead || !m.hostile || !m.inCombat || m.threat.size === 0) continue;
-      for (const id of m.threat.keys()) {
-        if (this.belongsToHealerParty(source, id)) {
-          aware.push(m);
-          break;
-        }
-      }
+      if (this.threatEntryMatchesEntity(m, target)) aware.push(m);
     }
     if (aware.length === 0) return;
     const per = total / aware.length;
     for (const m of aware) addThreat(m, source.id, per);
   }
 
-  /** Is hate-table entry `id` the healer, a party member, or one of their pets? */
-  private belongsToHealerParty(healer: Entity, id: number): boolean {
-    if (id === healer.id) return true;
-    const e = this.entities.get(id);
-    if (!e) return false;
-    const pid = e.kind === 'player' ? e.id : e.ownerId;
-    if (pid === null || pid === undefined) return false;
-    if (pid === healer.id) return true;
-    const party = this.partyOf(healer.id);
-    return !!party && party.members.includes(pid);
+  /** True when a hate-table entry belongs to the healed entity or its pet. */
+  private threatEntryMatchesEntity(mob: Entity, e: Entity): boolean {
+    if (mob.threat.has(e.id)) return true;
+    if (e.kind !== 'player') return false;
+    for (const id of mob.threat.keys()) {
+      const entry = this.entities.get(id);
+      if (entry?.ownerId === e.id) return true;
+    }
+    return false;
   }
 
   private applyAbility(p: Entity, meta: PlayerMeta, res: ResolvedAbility): void {
