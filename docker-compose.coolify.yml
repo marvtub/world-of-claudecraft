@@ -1,0 +1,47 @@
+# Coolify deployment compose for World of Claudecraft.
+# Separate from docker-compose.yml (which is the local-dev / generic-VPS file)
+# so upstream's `docker compose up` workflow stays untouched.
+#
+# Coolify magic used here:
+#   SERVICE_PASSWORD_POSTGRES  -> Coolify generates + persists a strong password,
+#                                 injected identically into both services.
+#   SERVICE_FQDN_GAME_8787     -> Coolify points traefik at the `game` container's
+#                                 port 8787, provisions Let's Encrypt TLS, and the
+#                                 client picks up the public origin. WebSockets
+#                                 auto-upgrade to wss:// on the HTTPS page.
+#
+# Set the domain in the Coolify UI (or override the default below).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: eastbrook
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES}
+      POSTGRES_DB: eastbrook
+    volumes:
+      - eastbrook_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eastbrook -d eastbrook"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  game:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Coolify replaces this with the assigned public URL and wires traefik.
+      SERVICE_FQDN_GAME_8787: ${SERVICE_FQDN_GAME_8787:-claudecraft.37.27.93.153.sslip.io}
+      DATABASE_URL: postgres://eastbrook:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/eastbrook
+      PORT: "8787"
+    volumes:
+      - eastbrook_media:/app/dist/media
+
+volumes:
+  eastbrook_pgdata:
+  eastbrook_media:
